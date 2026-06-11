@@ -1,0 +1,7 @@
+[package]
+name = "falcon-hash"
+version = "0.1.0"
+repository = "https://github.com/casey-digennaro/falcon-hash"
+edition = "2021"
+description = "Falcon hash: FNV-1a rolling hash and hash combiner utilities"
+license = "MIT"
