@@ -1,6 +1,8 @@
 # Falcon Hash — FNV-1a Rolling Hash and Hash Combiner Utilities
 
-`falcon-hash` is a Rust crate providing fast, deterministic hashing utilities: FNV-1a rolling hash for byte slices, value hashing via the standard library, and a hash combiner with avalanche mixing. It is designed for fingerprinting, cache keys, and deduplication where speed matters more than cryptographic security.
+`falcon-hash` is a Rust crate providing fast, deterministic hashing utilities: FNV-1a rolling hash for byte slices, value hashing via the standard library, and a simple hash combiner. It is designed for fingerprinting, cache keys, and deduplication where speed matters more than cryptographic security.
+
+**Status (2026-11-08): shelved.** No active development; kept as a public artefact. The FNV-1a implementation is correct and usable as-is — its limitations are stated plainly below.
 
 ## Why It Matters
 
@@ -43,13 +45,7 @@ The `wrapping_mul` in Rust ensures 64-bit overflow wraps modulo 2⁶⁴, matchin
 
 ### Why 1a (Not 1)?
 
-FNV-1 XORs the byte *after* multiplying. FNV-1a XORs *before* multiplying. The "a" variant has better avalanche properties for short inputs:
-
-| Input Length | FNV-1 Collision Rate | FNV-1a Collision Rate |
-|---|---|---|
-| 1–4 bytes | ~1 in 10⁴ | ~1 in 10⁷ |
-| 5–16 bytes | ~1 in 10⁶ | ~1 in 10⁸ |
-| 17+ bytes | comparable | comparable |
+FNV-1 XORs the byte *after* multiplying. FNV-1a XORs *before* multiplying. In exhaustive checks (every 1–3-byte input, and a million random 4-byte inputs), no collisions were observed for either FNV-1 or FNV-1a — at short lengths the 64-bit output does not distinguish them. The honest limit is the birthday bound: collisions become likely around ~2³² items.
 
 ### Hash Combiner
 
@@ -57,7 +53,7 @@ The `combine_hashes` function merges two hashes using a mixing function:
 
 $$\text{combine}(a, b) = (a \oplus b) \times 0\text{x}517cc1b727220a95$$
 
-This constant is derived from the golden ratio (φ) multiplied by 2⁶⁴, providing good bit-diffusion when combining hashes for compound keys. The XOR makes it order-sensitive (combine(a,b) ≠ combine(b,a)), which is intentional for structured keys.
+This constant is derived from the golden ratio (φ) multiplied by 2⁶⁴, providing good bit-diffusion when combining hashes for compound keys. As implemented, this mix is **commutative**: `combine(a, b) == combine(b, a)` — XOR does not record order, and the multiplication afterwards does not change that. It merges two hashes into one value; it does not encode which came first. Do not use it where order matters.
 
 ### Complexity
 
@@ -71,14 +67,18 @@ No heap allocation. All functions operate on stack values only.
 
 ### Avalanche Analysis
 
-For FNV-1a 64-bit, the strict avalanche criterion (SAC) is approximately satisfied: flipping one input bit changes each output bit with probability ~0.5 ± 0.05. This is sufficient for non-adversarial workloads.
+Measured on this implementation: flipping one input bit changed on average ~0.31 of the output bits for 4-byte inputs and ~0.44 for 16-byte inputs — below the strict avalanche ideal of 0.5, improving with input length, with trailing bytes diffusing weakest (a known FNV trait). That is adequate for non-adversarial fingerprinting and cache keys; it is not a strong mixing function and must not be relied on where inputs may be adversarial.
 
 ## Quick Start
 
+This crate is **not published to crates.io**. Use it via git:
+
 ```toml
 [dependencies]
-falcon-hash = "0.1"
+falcon-hash = { git = "https://github.com/SuperInstance/falcon-hash" }
 ```
+
+(or copy `src/lib.rs` — it is a single file with no dependencies.)
 
 ```rust
 use falcon_hash::{rolling_hash, combine_hashes, hash_value};
@@ -104,7 +104,7 @@ let name_hash = hash_value(&"alice");
 |---|---|---|
 | `rolling_hash` | `(&[u8]) -> u64` | FNV-1a 64-bit hash of a byte slice. |
 | `hash_value<T: Hash>` | `(&T) -> u64` | Hash any `Hash`-implementing type via `DefaultHasher`. |
-| `combine_hashes` | `(u64, u64) -> u64` | Order-sensitive mix of two hashes using golden-ratio constant. |
+| `combine_hashes` | `(u64, u64) -> u64` | Commutative mix of two hashes using golden-ratio constant (order-insensitive as implemented). |
 
 ### Properties
 
@@ -113,7 +113,7 @@ let name_hash = hash_value(&"alice");
 | Output size | 64 bits (u64) |
 | Seed | Fixed (deterministic) |
 | Allocation | Zero |
-| Endianness | Native (platform-dependent) |
+| Endianness | `rolling_hash` consumes bytes in slice order, so its result is identical on every platform |
 | Max collision rate | ~2⁻⁶⁴ for random inputs (birthday bound: ~2³² items) |
 
 ## Architecture Notes
@@ -128,10 +128,7 @@ The hash combiner uses `0x517cc1b727220a95`, which is Knuth's multiplicative has
 
 ### Usage in the SuperInstance Ecosystem
 
-`falcon-hash` is used by:
-- **fastloop-guard**: Shingle hashing for MinHash signatures
-- **fleet-metrics**: Cache key generation for metric dedup
-- **credential-store**: Content-addressed storage of encrypted blobs
+`falcon-hash` has **no known dependents** — nothing in the SuperInstance ecosystem currently depends on this crate. The FNV-1a *algorithm* is used elsewhere in the fleet in inline form: **credential-store** carries its own hand-copied `fnv1a64` as a fleet-agreed digest, but it does not use this crate.
 
 ## References
 

@@ -39,9 +39,11 @@ mod tests {
     }
 
     #[test]
-    fn test_combine_different() {
+    fn test_combine_commutative() {
+        // As implemented, combine_hashes is commutative: (a ^ b) * k does
+        // not record argument order. This test documents that behaviour.
         let a = rolling_hash(b"foo");
         let b = rolling_hash(b"bar");
-        assert_ne!(combine_hashes(a, b), combine_hashes(b, a));
+        assert_eq!(combine_hashes(a, b), combine_hashes(b, a));
     }
 }
